@@ -1,0 +1,164 @@
+# ════════════════════════════════════════════════════════════════════════════
+# example.yaml — Sonoff MS01 Soil Moisture Sensor
+# ════════════════════════════════════════════════════════════════════════════
+#
+# The MS01 component outputs the raw ADC voltage only.  Moisture % conversion is
+# done here in YAML so you can easily tune calibration constants without having
+# to dive into the C++ component.
+#
+# Two examples are provided below — pick one, both, or roll-your-own.
+#
+# Hardware requirements
+# ─────────────────────
+#   • Any ESP32 variant (original, S2, S3, C3, C6 …)
+#   • The MS01 uses an RJ4 'telephone' style connector (sometimes changes, but I
+#     normally cut that off anyways):
+#         VCC (3.3 V) - red,
+#         GND - black,
+#         DATA - white (have seen yellow as well)
+#   • A 4.7kΩ to 10kΩ pull-up from DATA to 3.3 V is recommended for cable runs > 20 cm
+#     (the sensor has an internal pull-up but it is weak). You can use adaptor/converter
+#     modules usually used for e.g. DS18b20 sensors.
+#
+# Wiring
+# ────────
+#   MS01 red   → ESP32 3.3 V
+#   MS01 black → ESP32 GND
+#   MS01 white → ESP32 GPIO14  (or any free internal GPIO)
+#
+#   The voltage DECREASES as moisture increases:
+#     Dry air  ≈ 2.84 V
+#     Wet soil ≈ 1.65 V  (varies by soil type)
+#     Pure water can read lower still (~1.50 V) but is not a useful reference
+#     for soil calibration.
+#
+# ════════════════════════════════════════════════════════════════════════════
+
+esphome:
+  name: soil-sensor
+  friendly_name: Soil Sensor
+
+esp32:
+  variant: esp32s3          # change to your variant to one of esp32, esp32s2,
+                            # esp32s3, esp32c2, esp32c3, esp32c5, esp32c6,
+                            # esp32c61, esp32h2 or esp32p4
+  framework:
+    # NOTE: ESP-IDF framework is mandatory - Arduino does not provide the RMT v5 API
+    type: esp-idf
+    version: recommended
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+api:
+  encryption:
+    key: !secret api_key    # you can generate with: openssl rand -base64 32
+
+ota:
+  - platform: esphome
+    password: !secret ota_password    # you can generate with: openssl rand -base64 32
+
+logger:
+  level: DEBUG   # set to INFO once working
+
+external_components:
+  - source: github://AshieSlashy/esphome-sonoff-ms01
+    components: [sonoff_ms01]
+
+# ── MS01 raw voltage ─────────────────────────────────────────────────────────
+sensor:
+  - platform: sonoff_ms01
+
+    # GPIO connected to the MS01 DATA line.
+    # Must be an internal ESP32 GPIO (no I²C expanders).
+    pin: GPIO14
+
+    # How often to read the sensor.
+    # The DHT-style protocol takes ~4-5 ms per read.
+    # 60s is the recommended minimum for soil sensors, though every
+    # 30min or more is normally fine.
+    update_interval: 60s
+    voltage:
+      id: soil_voltage
+      name: "Soil ADC Voltage"
+      on_value:
+        then:
+          # Update template platform sensor that has 'update_interval: never'
+          # That is, the template sensor only updates when there's a new reading
+          # Don't need to do this for the `copy-platform` sensor.
+          - component.update: soil_moisture_tasmota
+      # You can hide this from Home Assistant once you're happy with
+      # calibration and only want the moisture % entity (otherwise HA will continue
+      # to log the voltage readings):
+      # internal: true
+
+# ── Moisture conversion ──────────────────────────────────────────────────────
+
+# ── OPTION A: Linear calibration (recommended) ───────────────────────────────
+#
+# Simple two-point linear mapping between your measured dry and wet voltages.
+# You can add points for improved accuracy - ie if you have a preferred moisture
+# level previously established, set a reference at that point.
+#
+# Calibration procedure:
+#   1. Leave the sensor in dry air for 30 minutes, note the voltage → VOLTAGE_DRY
+#   2. Insert sensor in a dry sample of the target soil
+#   3. Record any/all additional/intermediate readings (eg 'preferred' moisture level)
+#      _going from driest to wettest_ if desired
+#   4. Record reading of saturated (but not waterlogged) soil, note voltage
+#      → VOLTAGE_WET.  Do NOT use pure water — it reads lower than any real soil
+#   5. Update the `calibrate_linear` constants below and reflash
+#
+  - name: "Soil Moisture (linear)"
+    # A copy sensor auto-updates when the source sensor updates
+    platform: copy
+    id: soil_moisture_linear
+    source_id: soil_voltage
+    unit_of_measurement: "%"
+    device_class: humidity
+    state_class: measurement
+    icon: mdi:water-percent
+    accuracy_decimals: 0
+    filters:
+      - calibrate_linear:
+        - 1.65 -> 100.00
+        - 2.84 -> 0.00
+      - clamp:
+          min_value: 0
+          max_value: 100
+
+# ── OPTION B: Tasmota piecewise formula ──────────────────────────────────────
+#
+# Empirical curve fitted by the Tasmota PR #15335 author by logging raw ADC
+# values alongside the eWeLink app's displayed percentages.  Note this formula
+# was fitted to a specific sensor unit in a specific liquid (salt water) and
+# may not match your sensor or soil well.  If option A gives you reasonable
+# results, prefer it.
+#
+# Also note: the Tasmota formula operates on the raw integer ADC count
+# (voltage × 10000), not on the voltage directly.
+#
+  - name: "Soil Moisture (Tasmota)"
+    platform: template
+    id: soil_moisture_tasmota
+    unit_of_measurement: "%"
+    device_class: humidity
+    state_class: measurement
+    icon: mdi:water-percent
+    accuracy_decimals: 0
+    update_interval: never
+    lambda: |-
+      if (isnan(id(soil_voltage).state)) return {};
+      float raw = id(soil_voltage).state * 10000.0f;
+      float moisture, x;
+      if (raw < 15037.0f) {
+        x = raw - 15200.0f;
+        moisture = -powf(0.0024f * x, 3.0f) - 0.0004f * x + 20.1f;
+      } else if (raw < 22300.0f) {
+        moisture = -0.00069f * raw + 30.6f;
+      } else {
+        x = raw - 22800.0f;
+        moisture = -powf(0.00046f * x, 3.0f) - 0.0004f * x + 15.0f;
+      }
+      return std::clamp(moisture, 0.0f, 100.0f);
