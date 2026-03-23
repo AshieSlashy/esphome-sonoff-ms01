@@ -67,9 +67,17 @@ void SonoffMS01Component::update() {
     return;
   }
 
+  // update is "start of new cycle" - so reset retries and kick off a read
+  retried_ = false;
+  if (!this->start_read_()) {
+    ESP_LOGE(TAG, "Failed to start MS01 read");
+  }
+}
+
+bool SonoffMS01Component::start_read_() {
   // ── 1. Allocate RMT channel ──────────────────────────────────────────────
   if (!allocate_rmt_()) {
-    return;  // Warning already logged inside allocate_rmt_()
+    return false;   // Warning already logged inside allocate_rmt_()
   }
 
   // ── 2. Arm the RMT receiver BEFORE sending the start pulse ──────────────
@@ -102,7 +110,7 @@ void SonoffMS01Component::update() {
   if (err != ESP_OK) {
     ESP_LOGW(TAG, "rmt_receive() failed: %s — aborting read", esp_err_to_name(err));
     release_rmt_();
-    return;
+    return false;
   }
 
   // ── 3. Bit-bang the start pulse ──────────────────────────────────────────
@@ -126,12 +134,14 @@ void SonoffMS01Component::update() {
   // 20ms gives comfortable margin.
   state_.store(State::WAITING, std::memory_order_relaxed);
   deadline_ms_ = millis() + 20;
+  return true;
 }
 
 // ── loop() ──────────────────────────────────────────────────────────────────
 // Runs on every ESPHome main-loop tick.  When the ISR signals completion,
 // this method decodes the symbols and publishes the sensor values.
 void SonoffMS01Component::loop() {
+
   switch (state_.load(std::memory_order_relaxed)) {
     case State::IDLE:
       return;  // Nothing to do
@@ -144,6 +154,16 @@ void SonoffMS01Component::loop() {
                  (unsigned) num_symbols_);
         release_rmt_();
         state_.store(State::IDLE, std::memory_order_relaxed);
+
+        // single retry on timeout
+        if (!retried_) {
+          retried_ = true;
+          if (!this->start_read_()) {
+            ESP_LOGE(TAG, "Retry start failed");
+          }
+          return;
+        }
+        retried_ = false;
       }
       // Otherwise keep waiting; the ISR will flip state to DONE
       return;
@@ -153,8 +173,23 @@ void SonoffMS01Component::loop() {
       // We are now back in main-loop context: safe to call publish_state(),
       // allocate memory, use FreeRTOS blocking primitives, etc.
       release_rmt_();       // Return channel to pool immediately
-      decode_and_publish_();
       state_.store(State::IDLE, std::memory_order_relaxed);
+
+      // single retry if necessary
+      if (!decode_and_publish_()) {
+        if (!retried_) {
+          retried_ = true;
+          if (!this->start_read_()) {
+            ESP_LOGE(TAG, "Retry start after failed decode failed");
+          }
+          return;
+        }
+      }
+
+      retried_ = false;
+      return;
+
+    default:
       return;
   }
 }
@@ -219,7 +254,7 @@ void SonoffMS01Component::release_rmt_() {
 }
 
 // ── decode_and_publish_() ─────────────────────────────────────────────────────
-void SonoffMS01Component::decode_and_publish_() {
+bool SonoffMS01Component::decode_and_publish_() {
   const size_t n = num_symbols_;
 
   // ── Raw symbol dump (logged at DEBUG level) ───────────────────────────────
@@ -244,7 +279,7 @@ void SonoffMS01Component::decode_and_publish_() {
   if (n < MIN_SYMBOLS) {
     ESP_LOGW(TAG, "Too few RMT symbols: got %u, need at least %u — "
                   "check wiring and pullup resistor", n, MIN_SYMBOLS);
-    return;
+    return false;
   }
 
   // ── Decode 40 bits MSB-first into 5 bytes ────────────────────────────────
@@ -259,7 +294,7 @@ void SonoffMS01Component::decode_and_publish_() {
       ESP_LOGW(TAG, "Unexpected framing on bit[%u]: "
                     "level0=%u dur0=%u — noise or protocol mismatch",
                i, sym.level0, sym.duration0);
-      return;
+      return false;
     }
 
     // dur1 >= 40 µs → bit '1',  dur1 < 40 µs → bit '0'
@@ -282,7 +317,7 @@ void SonoffMS01Component::decode_and_publish_() {
     if (recovered != calc) {
       ESP_LOGW(TAG, "Checksum failed: calculated 0x%02X, received 0x%02X "
                     "(recovery also failed) — discarding reading", calc, data[4]);
-      return;
+      return false;
     }
     ESP_LOGD(TAG, "Last-bit timeout recovery applied (end pulse absent)");
     data[4] = recovered;
@@ -304,6 +339,7 @@ void SonoffMS01Component::decode_and_publish_() {
   ESP_LOGD(TAG, "raw=%d  voltage=%.4f V", raw, voltage);
 
   voltage_sensor_->publish_state(voltage);
+  return true;
 }
 
 }  // namespace sonoff_ms01

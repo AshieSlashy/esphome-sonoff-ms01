@@ -94,9 +94,15 @@ class SonoffMS01Component : public PollingComponent {
   /** Disable + delete the RMT channel, returning it to the shared pool. */
   void release_rmt_();
 
+  /** Start one physical MS01 read transaction.
+   *  Arms RMT, sends the start pulse, and enters WAITING state. */
+  bool start_read_();
+
   /** Parse symbols_ and publish to ESPHome sensors.
-   *  Called from loop() (main-loop context — safe to call publish_state). */
-  void decode_and_publish_();
+   *  Called from loop() (main-loop context — safe to call publish_state).
+   *  Returns false if the decode fails. */
+  bool decode_and_publish_();
+  bool retried_{false};
 
   // ── ISR callback ─────────────────────────────────────────────────────────
   /**
