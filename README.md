@@ -3,10 +3,11 @@
 Reads the **Sonoff MS01** capacitive soil moisture sensor using the ESP32's
 hardware **RMT peripheral** for the sensor's DHT22-style one-wire protocol.
 
-No Arduino library required; no busy-wait blocking*; fully interrupt driven; plays
+No Arduino (or other) library required; no busy-wait blocking<sup>*</sup>; fully interrupt driven; plays
 nicely with ESPHome; no interference with the FreeRTOS scheduler.
 
-*except for a 450us delay to kick off a reading
+<small><small><small><small><small>*except for a really teensy tiny barely noticeable 450us delay to kick off each reading, but that's actually totally ok and not triggering (lol) at all because the delay is soooo way smaller than the FreeRTOS tick resolution, we're running on the second core, and really it's all fine... and totally acceptable way to bit-bang one single symbol... you should see what the other guys do... totally not triggering (again?!?)... really...</small></small></small></small></small>
+
 ---
 
 ## Hardware requirements
