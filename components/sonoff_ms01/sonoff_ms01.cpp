@@ -7,6 +7,7 @@
 
 #include "sonoff_ms01.h"
 #include "esphome/core/log.h"
+#include "esp_rom_sys.h"  // esp_rom_delay_us
 
 static const char *const TAG = "sonoff_ms01";
 
@@ -118,7 +119,7 @@ void SonoffMS01Component::update() {
   // own start pulse as the first captured symbol.
   const gpio_num_t gpio = static_cast<gpio_num_t>(pin_->get_pin());
   gpio_set_level(gpio, 0);
-  delayMicroseconds(450);
+  esp_rom_delay_us(450);
   gpio_set_level(gpio, 1);  // release — sensor detects rising edge ~30 µs later
 
   // Full frame: 450µs start + ~5ms data + 1ms end-of-frame threshold = ~7ms.
