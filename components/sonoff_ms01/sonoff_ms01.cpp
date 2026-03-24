@@ -8,6 +8,7 @@
 #include "sonoff_ms01.h"
 #include "esphome/core/log.h"
 #include "esp_rom_sys.h"  // esp_rom_delay_us
+#include "esp_log.h"  // esp_log_level_get
 
 static const char *const TAG = "sonoff_ms01";
 
@@ -265,11 +266,15 @@ bool SonoffMS01Component::decode_and_publish_() {
   //   sym[2..41]    : 40 data bits          ~{50  LOW, 26  HIGH=0 / 70 HIGH=1}
   //   sym[42]       : end pulse (optional)  ~{50  LOW, >>1000 HIGH → RMT stop}
   ESP_LOGD(TAG, "RMT captured %u symbols:", n);
-  for (size_t i = 0; i < n; i++) {
-    const rmt_symbol_word_t &s = symbols_[i];
-    ESP_LOGD(TAG, "  sym[%02u]: {dur0=%4u lv0=%u}  {dur1=%4u lv1=%u}",
-             i, s.duration0, s.level0, s.duration1, s.level1);
+#if defined(USE_LOGGER) && (ESPHOME_LOG_LEVEL > ESPHOME_LOG_LEVEL_DEBUG)
+  if (esp_log_level_get(TAG) > ESP_LOG_DEBUG) {
+    for (size_t i = 0; i < n; i++) {
+      const rmt_symbol_word_t &s = symbols_[i];
+      ESP_LOGD(TAG, "  sym[%02u]: {dur0=%4u lv0=%u}  {dur1=%4u lv1=%u}",
+               i, s.duration0, s.level0, s.duration1, s.level1);
+    }
   }
+#endif
 
   // ── Symbol count check ────────────────────────────────────────────────────
   static constexpr size_t DATA_OFFSET = 2;   // skip sym[0] (start) + sym[1] (ACK)
