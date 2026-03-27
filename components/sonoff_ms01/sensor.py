@@ -34,9 +34,6 @@ from esphome.const import (
 from esphome.core import CORE
 from . import sonoff_ms01_ns, SonoffMS01Component
 
-# ── Rather important ─────────────────────────────────────────────────────────
-# DEPENDENCIES = ["esp32"]
-
 # ── Config key constants ────────────────────────────────────────────────────
 CONF_VOLTAGE = "voltage"
 
@@ -88,8 +85,6 @@ CONFIG_SCHEMA = cv.All(
         }
     )
     .extend(cv.polling_component_schema("60s")),  # default poll = 60 s
-    # cv.only_on_esp32,
-    # cv.only_with_framework("esp-idf"),
     _validate_platform_requirements,
 )
 
