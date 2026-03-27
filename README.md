@@ -23,7 +23,7 @@ nicely with ESPHome; no interference with the FreeRTOS scheduler.
 
 ## Wiring
 
-The MS01 has a 3-pin JST-XH connector:
+The MS01 has a 3-pin JST-XH or in later versions an RJ9 (4P4C) 'telephone handset' connector:
 
 ```
 MS01  red   →  ESP32 3.3 V
@@ -31,13 +31,13 @@ MS01  black →  ESP32 GND
 MS01  white →  ESP32 GPIO (any free internal pin, e.g. GPIO14)
 ```
 
+I normally cut this off and wire up directly.
+
 A **4.7kΩ to 10kΩ pull-up resistor** from DATA to 3.3 V is recommended for cable runs
 longer than ~20 cm.  The sensor has an internal weak pull-up but it can be overwhelmed
 by cable capacitance.
 
-I usually use an 'adaptor/converter' type module normally used for DS18b20 sensors.
-These have the pullup resistor as well as a little power decoupling capacitor
-(one example at: https://www.aliexpress.com/item/1005002989076212.html).
+I usually use an 'adaptor/converter' type module normally used for DS18b20 and other 1-wire devices.  These have the pullup resistor as well as a little power decoupling capacitor (one example at: https://www.aliexpress.com/item/1005002989076212.html).
 
 ---
 
@@ -113,7 +113,7 @@ The MS01 uses DHT22-compatible one-wire signalling:
 1. **`update()`** — allocates one RMT RX channel, arms it to capture incoming
    pulses, then bit-bangs a 450 µs LOW start pulse via `delayMicroseconds()`
    (timing tolerance is generous so software is sufficient), then returns
-   immediately.
+   immediately. This is the only blocking call in this implementation.
 
 2. **ISR** (`rmt_rx_done_cb_`) — fires from RMT interrupt context when the
    full 40-bit frame has been received (~4 ms after the start pulse).  Writes

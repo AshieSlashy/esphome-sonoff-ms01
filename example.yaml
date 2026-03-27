@@ -11,7 +11,7 @@
 # Hardware requirements
 # ─────────────────────
 #   • Any ESP32 variant (original, S2, S3, C3, C6 …)
-#   • The MS01 uses an RJ4 'telephone' style connector (sometimes changes, but I
+#   • The MS01 uses an RJ9 (4P4C) 'telephone handset' style connector (sometimes changes, but I
 #     normally cut that off anyways):
 #         VCC (3.3 V) - red,
 #         GND - black,
