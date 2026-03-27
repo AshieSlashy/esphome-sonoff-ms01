@@ -34,25 +34,34 @@ from esphome.const import (
 from esphome.core import CORE
 from . import sonoff_ms01_ns, SonoffMS01Component
 
+# ── Rather important ─────────────────────────────────────────────────────────
+DEPENDENCIES = ["esp32"]
+
 # ── Config key constants ────────────────────────────────────────────────────
 CONF_VOLTAGE = "voltage"
 
-
-def _validate_not_arduino(config):
-    """
-    Reject gracefully if the user has chosen the Arduino framework.
-    The RMT v5 API (rmt_rx.h / rmt_new_rx_channel etc.) is only available
-    under ESP-IDF.  CORE.using_esp_idf was deprecated in ESPHome 2026.1;
-    the correct inverse check is CORE.using_arduino.
-    """
-    if CORE.is_esp32 and CORE.using_arduino:
+# ── Custom validator ─────────────────────────────────────────────────────────
+def _validate_platform_requirements(config):
+    if not CORE.is_esp32:
         raise cv.Invalid(
-            "sonoff_ms01 requires the ESP-IDF framework (not Arduino). "
-            "Add the following to your esp32: section:\n"
-            "  framework:\n"
-            "    type: esp-idf\n"
-            "    version: recommended"
+            "sonoff_ms01 requires an ESP32 because it uses the RMT peripheral.\n"
+            "Add an `esp32:` section to your YAML, for example:\n"
+            "  esp32:\n"
+            "    board: esp32dev\n"
+            "    framework:\n"
+            "      type: esp-idf"
         )
+
+    if CORE.using_arduino:
+        raise cv.Invalid(
+            "sonoff_ms01 requires the ESP-IDF framework on ESP32 because it uses the RMT driver API.\n"
+            "Update your `esp32:` section to:\n"
+            "  esp32:\n"
+            "    framework:\n"
+            "      type: esp-idf\n"
+            "      version: recommended"
+        )
+
     return config
 
 
@@ -79,7 +88,9 @@ CONFIG_SCHEMA = cv.All(
         }
     )
     .extend(cv.polling_component_schema("60s")),  # default poll = 60 s
-    _validate_not_arduino,
+    # cv.only_on_esp32,
+    # cv.only_with_framework("esp-idf"),
+    _validate_platform_requirements,
 )
 
 
