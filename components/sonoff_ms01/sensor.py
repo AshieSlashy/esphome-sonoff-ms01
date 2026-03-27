@@ -35,7 +35,7 @@ from esphome.core import CORE
 from . import sonoff_ms01_ns, SonoffMS01Component
 
 # ── Rather important ─────────────────────────────────────────────────────────
-DEPENDENCIES = ["esp32"]
+# DEPENDENCIES = ["esp32"]
 
 # ── Config key constants ────────────────────────────────────────────────────
 CONF_VOLTAGE = "voltage"
